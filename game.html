@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html>
+	<head>
+  	<title>Nothello</title>
+		<style>
+			.board{
+				border: 2px solid black;
+				height: 378px;
+				width: 378px;
+			}
+		</style>
+		<h2>Nothello</h2>
+		<div id="board"
+			onmousemove = "moveGhost();"
+			onclick = "placeDisc();"
+			></div>
+			<p>
+				<button>
+					New Game
+				</button>
+				<button>
+					Forfeit
+				</button>
+			</p>
+		<p><span id="turn"></span>'s turn</p>
+		<p>Win tally: Black <span id="blkwin"></span> | White <span id="whtwin"></span> | Ties <span id="ties"></span></p>
+		<p>Tile: <span id="cx"></span><span id="cy"></span></p>
+		<h2 id="win-notice"></h2>
+		<p id="final-score"></p>
+  </head>
+	<body>
+		<script>
+			function withinBounds(x,y){
+				// Checks if cursor is inside the board
+				if (-1 < x && x < gridSize && -1 < y && y < gridSize) {
+					return true;
+				}
+				return false;
+			}
+
+			function setTurnIndicator(color) {
+				// Sets turn indicator text
+				if (color === 'black'){
+					turnIndicator.textContent = "Black";
+				}
+				else if (color === 'white'){
+					turnIndicator.textContent = "White";
+				}
+			}
+
+			function setWinTally() {
+				document.getElementById("blkwin").textContent = wins.blk;
+				document.getElementById("whtwin").textContent = wins.wht;
+				document.getElementById("ties").textContent = wins.ties;
+			}
+
+			function getCoords(event){
+				// Returns current coordinates in terms of the game board
+				let x = Math.floor((event.clientX-borderX)/squareSize);
+				let y =Math.floor((event.clientY-borderY)/squareSize);
+				return [x, y]
+			}
+
+			function getDiscFname(color, opaque) {
+				// Returns the desired image file name for a game piece
+				let filename = '';
+				if (color === "black"){
+					filename += 'blk';
+				}
+				else if (color === 'white'){
+					filename += 'wht';
+				}
+				if (opaque) {
+					filename += 'op';
+				}
+				filename += '.png';
+				return filename;
+			}
+
+			function createDisc(color, opaque) {
+				// Creates and returns an image element
+				let filename = getDiscFname(color, opaque);
+				let img = document.createElement("img");
+				img.src = filename;
+				return img
+			}
+
+			function drawDisc(x, y, color, opaque) {
+				// Draws a game piece on desired game board coordinates
+				let img = createDisc(color, opaque);
+				board.appendChild(img);
+				img.style.position = "absolute";
+				img.style.left = x * squareSize + borderX + 2 + "px";
+				img.style.top = y * squareSize + borderY + 2 +"px";
+				grid[x][y] = {
+					color: color,
+					ref: img}
+					;
+			}
+
+			function moveGhost() {
+				// Moves the opaque "move indicator game piece" according to cursor location
+				let [x,y] = getCoords(event);
+				
+				if (withinBounds(x,y)) {
+					document.getElementById("cx").textContent = xcoords[x];
+					document.getElementById("cy").textContent = y+1;
+					ghost.style.left = x * squareSize + borderX + 2 + "px";
+					ghost.style.top = y * squareSize + borderY + 2 +"px";
+				}
+			}
+
+			function traverse(x, y, stepX, stepY, color=turn){
+				/*
+				Traverses a single direction for capturable pieces
+				x, y, color = assumed move (new piece placement)
+				stepX, stepY = traversal direction, [-1, 0, 1] (positive => right and down respectively)
+				*/
+				x += stepX;
+				y += stepY;
+				let capturables = [];
+				while (withinBounds(x,y)){
+					let square = grid[x][y];
+					if (square === ""){return [];}
+					if (square.color != color) {capturables.push(square);}
+					if (square.color === color) {return capturables;}
+					x += stepX;
+					y += stepY;
+				}
+				return [];
+			}
+
+			function checkLegal(x,y,color=turn) {
+				// Checks if a move is allowed by the rules
+				if (grid[x][y]) {
+					return false;
+				}
+				for (let stepY = -1; stepY < 2; stepY++) {
+					for (stepX = -1; stepX < 2; stepX++) {
+						if (stepX === 0 && stepY === 0) {continue;}
+						if (traverse(x, y, stepX, stepY, color).length > 0) {return true;}
+					}
+				}
+				return false;
+			}
+
+			function getCapturables(x,y, color=turn) {
+				// Returns the game pieces which would be captured with the specified move
+				let capturables = [];
+				for (let stepY = -1; stepY < 2; stepY++) {
+					for (stepX = -1; stepX < 2; stepX++) {
+						if (stepX === 0 && stepY === 0) {continue;}
+						capturables = capturables.concat(traverse(x, y, stepX, stepY, color));
+					}
+				}
+				return capturables;
+			}
+
+			function capture(x,y, color=turn) {
+				// Captures game pieces according to the specified move
+
+				function changeColor(disc) {
+					// Changes the color of specified game piece
+					if (disc.color === "black") {
+						disc.color = "white";
+						disc.ref.src = "wht.png";
+					}
+					else {
+						disc.color = "black";
+						disc.ref.src = "blk.png";
+					}
+				}
+				let capturables = getCapturables(x, y, color);
+				for (let i = 0; i < capturables.length; i++) {
+					changeColor(capturables[i]);
+				}
+			}
+
+			function placeDisc() {
+				// Handles game piece placement and turn changes
+				let [x,y] = getCoords(event);
+				if (withinBounds(x,y) && checkLegal(x,y,turn)){
+					drawDisc(x,y,turn,false);
+					capture(x,y);
+					if (turn === "black") {
+						if (checkStalemate("white")){
+							if (checkStalemate()) {endgame(); return;}
+							return;
+						}
+						turn = "white";
+					}
+					else {
+						if (checkStalemate("black")){
+							if (checkStalemate()) {endgame(); return;}
+							return;
+						}
+						turn = "black";
+					}
+
+					setTurnIndicator(turn);
+					ghost.src = getDiscFname(turn, true);
+				}
+			}
+
+			function checkStalemate(color=turn) {
+				// Checks whether a color has any legal moves left
+				for (let x = 0; x < gridSize; x++) {
+					for (let y = 0; y < gridSize; y++) {
+						if (checkLegal(x,y,color)) {return false;}
+					}
+				}
+				return true;
+			}
+
+			function score() {
+				// Counts the final points for both colors
+				let blk = 0;
+				let wht = 0;
+				for (let x = 0; x < gridSize; x++) {
+					for (let y = 0; y < gridSize; y++) {
+						let square = grid[x][y];
+						if (!square) {continue;}
+						if (square.color === "black") {blk += 1;}
+						else if (square.color === "white") {wht += 1;}
+					}
+				}
+				return [blk, wht];
+			}
+
+			function endgame() {
+				let winner = ""
+				let [blk, wht] = score();
+				if (blk>wht) {
+					winner = "Black";
+					wins.blk += 1;
+				}
+				else if (wht>blk) {
+					winner = "White";
+					wins.wht += 1;
+				}
+				else {
+					winner = "Tie";
+					wins.ties += 1;
+				}
+				localStorage.setItem('wins', JSON.stringify(wins));
+				document.getElementById("win-notice").textContent = "Winner: " + winner + "!";
+				document.getElementById("final-score").textContent = "Final score: Black: " + blk + " | White: " + wht;
+				console.log(wins);
+			}
+
+			const xcoords= ["A", "B", "C", "D", "E", "F", "G", "H"];
+			const wins = JSON.parse(localStorage.getItem('wins')) || {
+				blk: 0,
+				wht: 0,
+				ties: 0
+			};
+
+			setWinTally();
+			const squareSize = 47;
+			const gridSize = 8;
+			const grid = [];
+			for (let i = 0; i < gridSize; i++){
+				let column = [];
+				for (let j = 0; j < gridSize; j++){
+					column.push("");
+				}
+				grid.push(column);
+			}
+			let turn = "black";
+			let turnIndicator = document.getElementById("turn");
+			setTurnIndicator(turn);
+			/*let img = document.createElement("img");
+			img.src = "board.jpg";*/
+			const board = document.getElementById("board");
+			/*board.appendChild(img);*/
+			board.style.backgroundImage = "url('board.jpg')";
+			board.style.width = "378px";
+			board.style.height = "378px"
+
+			const rect = board.getBoundingClientRect();
+			const borderX = Math.round(rect.left);
+			const borderY = Math.round(rect.top);
+
+			let ghost = createDisc(turn, true);
+			board.appendChild(ghost);
+			ghost.style.position = "absolute";
+			drawDisc(3,3,"white",false);
+			drawDisc(4,4,"white",false);
+			drawDisc(3,4,"black",false);
+			drawDisc(4,3,"black",false);
+		</script>
+	</body>
+</html>
